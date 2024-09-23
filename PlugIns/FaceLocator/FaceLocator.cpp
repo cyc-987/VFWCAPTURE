@@ -260,7 +260,7 @@ DLL_EXP void markConnectedDomain(int w, int h, BYTE* pImg)
 			LK1[i] = LK1[root];
 		}
 	}
-	ShowDebugMessage("final classes: %d",myclass);
+	//ShowDebugMessage("final classes: %d",myclass);
 
 	//copy back
 	for(i=0;i<h;i++){
@@ -292,7 +292,7 @@ DLL_EXP void findLargestDomain(int w, int h, BYTE* pImg)
 		}
 		i++;
 	}
-	ShowDebugMessage("maxindex is %d at %d times", maxindex, maxcount);
+	//ShowDebugMessage("maxindex is %d at %d times", maxindex, maxcount);
 	//reset image color
 	for(i=0;i<w*h;i++){
 		if(pImg[i] == maxindex){

@@ -369,7 +369,7 @@ DLL_EXP int markConnectedDomain(int w, int h, BYTE* pImg)
 			LK1[i] = LK1[root];
 		}
 	}
-	ShowDebugMessage("final classes: %d",myclass);
+	//ShowDebugMessage("final classes: %d",myclass);
 
 	//copy back
 	for(i=0;i<h;i++){
@@ -382,7 +382,7 @@ DLL_EXP int markConnectedDomain(int w, int h, BYTE* pImg)
 }
 
 //get size and center
-DLL_EXP void getSizeAndCenterOfeachClass(int w, int h, BYTE* tempImg, int myclass, int* size, BYTE* centerX, BYTE* centerY)
+DLL_EXP void getSizeAndCenterOfeachClass(int w, int h, BYTE* tempImg, int myclass, int* size, int* centerX, int* centerY)
 {
 	//init arrays
     int* pixelCount = (int*)malloc(myclass * sizeof(int));
@@ -441,21 +441,40 @@ DLL_EXP void getSizeAndCenterOfeachClass(int w, int h, BYTE* tempImg, int myclas
 }
 
 //find eyes
-DLL_EXP void findEyes(int myclass, int* size, BYTE* centerX, BYTE* centerY, BUF_STRUCT* pBS)
+DLL_EXP BOOL findEyes(int myclass, int* size, int* centerX, int* centerY, BUF_STRUCT* pBS)
 {
 	int i,j;
+	BOOL flag = FALSE;
 	for(i=1;i<myclass;i++){
 		for(j=i+1;j<myclass;j++){
-			if(abs(centerY[i] - centerY[j]<4) &&
+			if(abs(centerY[i] - centerY[j]) < 4 &&
 				abs(centerX[i] - centerX[j]) > 15 &&
 				abs(centerX[i] - centerX[j]) < 30 &&
 				size[i] < 200 && size[j] < 200){
 
 				//find the eyes
-
+				//store
+				if(centerX[i] < centerX[j]){
+					pBS->ptTheLeftEye.x = centerX[i];
+					pBS->ptTheLeftEye.y = centerY[i];
+					pBS->ptTheRightEye.x = centerX[j];
+					pBS->ptTheRightEye.y = centerY[j];
+				}else{
+					pBS->ptTheLeftEye.x = centerX[j];
+					pBS->ptTheLeftEye.y = centerY[j];
+					pBS->ptTheRightEye.x = centerX[i];
+					pBS->ptTheRightEye.y = centerY[i];
+				}
+				ShowDebugMessage("eye1: %d, %d; eye2: %d, %d", centerX[i], centerY[i], centerX[j], centerY[j]);
+				//set true
+				ShowDebugMessage("find eyes!");
+				flag = TRUE;
+			}
+			if(flag) break;
 		}
+		if(flag) break;
 	}
-
+	return flag;
 }
 
 //morphological operation
@@ -467,9 +486,17 @@ DLL_EXP void morphological(int w, int h, BUF_STRUCT* pBS, BYTE* tempImg)
 	int myclass = markConnectedDomain(w, h, tempImg);
 	//calculate the size and center of each domain
 	int* size = (int*)malloc(myclass * sizeof(int));
-	BYTE* centerX = (BYTE*)malloc(myclass);
-	BYTE* centerY = (BYTE*)malloc(myclass);
+	int* centerX = (int*)malloc(myclass * sizeof(int));
+	int* centerY = (int*)malloc(myclass * sizeof(int));
 	getSizeAndCenterOfeachClass(w, h, tempImg, myclass, size, centerX, centerY);
+	BOOL flag = findEyes(myclass, size, centerX, centerY, pBS);
+	//draw eyes
+	COLORREF clr = TYUV1(250,250,0);
+	if(flag){
+		ShowDebugMessage("left: %d, %d, right: %d, %d", (pBS->ptTheLeftEye.x)*4, pBS->ptTheLeftEye.y*4, pBS->ptTheRightEye.x*4, pBS->ptTheRightEye.y*4);
+		DrawCross(pBS->displayImage, pBS->W, pBS->H, pBS->ptTheLeftEye.x*4, pBS->ptTheLeftEye.y*4, 10, clr, FALSE); 
+		DrawCross(pBS->displayImage, pBS->W, pBS->H, pBS->ptTheRightEye.x*4, pBS->ptTheRightEye.y*4, 10, clr, FALSE);
+	}
 
 	//free mem
 	free(size);
