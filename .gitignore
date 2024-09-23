@@ -1,0 +1,16 @@
+Debug
+ImageProc
+res
+TraceFeature
+*.exe
+*.dll
+*.txt
+*.clw
+*.dsp
+*.dsw
+VFWCAPTURE*
+*.lib
+*.aps
+*.def
+*.plg
+*.rc
