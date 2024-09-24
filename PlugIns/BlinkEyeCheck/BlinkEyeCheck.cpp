@@ -395,7 +395,7 @@ DLL_EXP void getSizeAndCenterOfeachClass(int w, int h, BYTE* tempImg, int myclas
     for (i = 0; i < myclass; i++) {
         minX[i] = w - 1;
 		minY[i] = h - 1;
-        maxX[i] = maxY[i] = centerX[i] = centerY[i] = 0;
+        maxX[i] = maxY[i] = centerX[i] = centerY[i] = pixelCount[i] = 0;
     }
 
     // First pass: count pixels, sum up coordinates, and find bounding box
@@ -494,9 +494,9 @@ DLL_EXP void morphological(int w, int h, BUF_STRUCT* pBS, BYTE* tempImg)
 	COLORREF clr = TYUV1(250,250,0);
 	if(flag){
 		ShowDebugMessage("left: %d, %d, right: %d, %d", (pBS->ptTheLeftEye.x)*4, pBS->ptTheLeftEye.y*4, pBS->ptTheRightEye.x*4, pBS->ptTheRightEye.y*4);
+	}
 		DrawCross(pBS->displayImage, pBS->W, pBS->H, pBS->ptTheLeftEye.x*4, pBS->ptTheLeftEye.y*4, 10, clr, FALSE); 
 		DrawCross(pBS->displayImage, pBS->W, pBS->H, pBS->ptTheRightEye.x*4, pBS->ptTheRightEye.y*4, 10, clr, FALSE);
-	}
 
 	//free mem
 	free(size);
