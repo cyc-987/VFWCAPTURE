@@ -382,7 +382,7 @@ DLL_EXP int markConnectedDomain(int w, int h, BYTE* pImg)
 }
 
 //get size and center
-DLL_EXP void getSizeAndCenterOfeachClass(int w, int h, BYTE* tempImg, int myclass, int* size, int* centerX, int* centerY)
+DLL_EXP void getSizeAndCenterOfeachClass(int w, int h, BYTE* tempImg, int myclass, int* size, int* centerX, int* centerY, int* widthX, int* widthY)
 {
 	//init arrays
     int* pixelCount = (int*)malloc(myclass * sizeof(int));
@@ -395,7 +395,7 @@ DLL_EXP void getSizeAndCenterOfeachClass(int w, int h, BYTE* tempImg, int myclas
     for (i = 0; i < myclass; i++) {
         minX[i] = w - 1;
 		minY[i] = h - 1;
-        maxX[i] = maxY[i] = centerX[i] = centerY[i] = pixelCount[i] = 0;
+        maxX[i] = maxY[i] = centerX[i] = centerY[i] = widthX[i] = widthY[i] = pixelCount[i] = 0;
     }
 
     // First pass: count pixels, sum up coordinates, and find bounding box
@@ -423,6 +423,8 @@ DLL_EXP void getSizeAndCenterOfeachClass(int w, int h, BYTE* tempImg, int myclas
         if (pixelCount[i] > 0) {
             // Calculate size as area of bounding box
             size[i] = (maxX[i] - minX[i] + 1) * (maxY[i] - minY[i] + 1);
+			widthX[i] = maxX[i] - minX[i] + 1;
+			widthY[i] = maxY[i] - minY[i] + 1;
             
             // Calculate center coordinates
             centerX[i] /= pixelCount[i];
@@ -465,6 +467,50 @@ DLL_EXP BOOL findEyes(int myclass, int* size, int* centerX, int* centerY, BUF_ST
 					pBS->ptTheRightEye.x = centerX[i];
 					pBS->ptTheRightEye.y = centerY[i];
 				}
+				//verify eyes
+				pBS->ptTheLeftEye.x *= 4;
+				pBS->ptTheLeftEye.y *= 4;
+				pBS->ptTheRightEye.x *= 4;
+				pBS->ptTheRightEye.y *= 4;
+
+				int nEyeDist = pBS->ptTheRightEye.x - pBS->ptTheLeftEye.x;
+				int nEyeWidth = nEyeDist * 3/2;
+				int nEyeHeight = nEyeDist/2;
+			
+				if(nEyeWidth > pBS->W/4 || nEyeHeight > pBS->H/4){
+					ShowDebugMessage("eye size too large!");
+					flag = FALSE;
+					break;
+				}
+
+				//creat eye and nose object
+				int nose_center_x = (pBS->ptTheLeftEye.x + pBS->ptTheRightEye.x) / 2;
+				int nose_center_y = (pBS->ptTheLeftEye.y + pBS->ptTheRightEye.y) / 2 - nEyeDist / 2;
+				int nose_width = nEyeDist * 3/4;
+				int nose_height = nEyeDist;
+				if(pBS->bLastEyeChecked == false){
+					TRACE_OBJECT *nose_obj, *leye_obj, *reye_obj;
+					nose_obj = &(pBS->pOtherVars->objNose);
+					leye_obj = &(pBS->pOtherVars->objLefteye);
+					reye_obj = &(pBS->pOtherVars->objRighteye);
+
+					nose_obj->rcObject.left = nose_center_x - nose_width/2;
+					nose_obj->rcObject.top = nose_center_y - nose_height/2;
+					nose_obj->rcObject.width = nose_width;
+					nose_obj->rcObject.height = nose_height;
+
+					leye_obj->rcObject.left = pBS->ptTheLeftEye.x - nEyeWidth/2;
+					leye_obj->rcObject.top = pBS->ptTheLeftEye.y - nEyeHeight/2;
+					leye_obj->rcObject.width = nEyeWidth;
+					leye_obj->rcObject.height = nEyeHeight;
+
+					reye_obj->rcObject.left = pBS->ptTheRightEye.x - nEyeWidth/2;
+					reye_obj->rcObject.top = pBS->ptTheRightEye.y - nEyeHeight/2;
+					reye_obj->rcObject.width = nEyeWidth;
+					reye_obj->rcObject.height = nEyeHeight;
+				}
+
+				//
 				ShowDebugMessage("eye1: %d, %d; eye2: %d, %d", centerX[i], centerY[i], centerX[j], centerY[j]);
 				//set true
 				ShowDebugMessage("find eyes!");
@@ -488,20 +534,24 @@ DLL_EXP void morphological(int w, int h, BUF_STRUCT* pBS, BYTE* tempImg)
 	int* size = (int*)malloc(myclass * sizeof(int));
 	int* centerX = (int*)malloc(myclass * sizeof(int));
 	int* centerY = (int*)malloc(myclass * sizeof(int));
-	getSizeAndCenterOfeachClass(w, h, tempImg, myclass, size, centerX, centerY);
+	int* widthX = (int*)malloc(myclass * sizeof(int));
+	int* widthY = (int*)malloc(myclass * sizeof(int));
+	getSizeAndCenterOfeachClass(w, h, tempImg, myclass, size, centerX, centerY, widthX, widthY);
 	BOOL flag = findEyes(myclass, size, centerX, centerY, pBS);
 	//draw eyes
 	COLORREF clr = TYUV1(250,250,0);
 	if(flag){
-		ShowDebugMessage("left: %d, %d, right: %d, %d", (pBS->ptTheLeftEye.x)*4, pBS->ptTheLeftEye.y*4, pBS->ptTheRightEye.x*4, pBS->ptTheRightEye.y*4);
+		ShowDebugMessage("left: %d, %d, right: %d, %d", pBS->ptTheLeftEye.x, pBS->ptTheLeftEye.y, pBS->ptTheRightEye.x, pBS->ptTheRightEye.y);
 	}
-		DrawCross(pBS->displayImage, pBS->W, pBS->H, pBS->ptTheLeftEye.x*4, pBS->ptTheLeftEye.y*4, 10, clr, FALSE); 
-		DrawCross(pBS->displayImage, pBS->W, pBS->H, pBS->ptTheRightEye.x*4, pBS->ptTheRightEye.y*4, 10, clr, FALSE);
+		DrawCross(pBS->displayImage, pBS->W, pBS->H, pBS->ptTheLeftEye.x, pBS->ptTheLeftEye.y, 10, clr, FALSE); 
+		DrawCross(pBS->displayImage, pBS->W, pBS->H, pBS->ptTheRightEye.x, pBS->ptTheRightEye.y, 10, clr, FALSE);
 
 	//free mem
 	free(size);
 	free(centerX);
 	free(centerY);
+	free(widthX);
+	free(widthY);
 }
 
 //end of self defined functions
