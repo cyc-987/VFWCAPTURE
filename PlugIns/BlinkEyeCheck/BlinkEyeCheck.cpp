@@ -496,18 +496,18 @@ DLL_EXP BOOL findEyes(int myclass, int* size, int* centerX, int* centerY, BUF_ST
 
 					nose_obj->rcObject.left = nose_center_x - nose_width/2;
 					nose_obj->rcObject.top = nose_center_y - nose_height/2;
-					nose_obj->rcObject.width = nose_width;
-					nose_obj->rcObject.height = nose_height;
+					nose_obj->rcObject.width = ((int)(nose_width/4))*4; //make sure it is a multiple of 4
+					nose_obj->rcObject.height = ((int)(nose_height/4))*4;
 
 					leye_obj->rcObject.left = pBS->ptTheLeftEye.x - nEyeWidth/2;
 					leye_obj->rcObject.top = pBS->ptTheLeftEye.y - nEyeHeight/2;
-					leye_obj->rcObject.width = nEyeWidth;
-					leye_obj->rcObject.height = nEyeHeight;
+					leye_obj->rcObject.width = ((int)(nEyeWidth/4))*4;
+					leye_obj->rcObject.height = ((int)(nEyeHeight/4))*4;
 
 					reye_obj->rcObject.left = pBS->ptTheRightEye.x - nEyeWidth/2;
 					reye_obj->rcObject.top = pBS->ptTheRightEye.y - nEyeHeight/2;
-					reye_obj->rcObject.width = nEyeWidth;
-					reye_obj->rcObject.height = nEyeHeight;
+					reye_obj->rcObject.width = ((int)(nEyeWidth/4))*4;
+					reye_obj->rcObject.height = ((int)(nEyeHeight/4))*4;
 				}
 
 				//
@@ -520,6 +520,171 @@ DLL_EXP BOOL findEyes(int myclass, int* size, int* centerX, int* centerY, BUF_ST
 		}
 		if(flag) break;
 	}
+	return flag;
+}
+//copy the area to temp memory
+DLL_EXP void copyTheAreaToTempMem(BYTE* source, 
+								int source_w, int source_h, 
+								int source_area_left, int source_area_top, int source_area_width, int source_area_height,
+								BYTE* dest,
+								int dest_w, int dest_h)
+{
+	//temp mem
+	BYTE* temp = (BYTE*)malloc(source_area_width * source_area_height * 2);
+	//copy to temp mem
+	int i,j;
+	for(i=0;i<source_area_height;i++){
+		for(j=0;j<source_area_width;j++){
+			temp[i*source_area_width+j] = source[(source_area_top+i)*source_w+source_area_left+j];
+		}
+	}
+	//resample to dest
+	ReSample(temp, source_area_width, source_area_height, dest_w, dest_h, false, false, dest);
+	//free mem
+	free(temp);
+}
+//check in area
+DLL_EXP BOOL ifInArea(int x, int y, aRect area)
+{
+	BOOL flag = false;
+	if(x >= area.left && x <= area.left + area.width && y >= area.top && y <= area.top + area.height){
+		flag = true;
+	}
+
+	return flag;
+}
+
+//copy and check eye color
+DLL_EXP BOOL copyAndCheckEyeColor(BUF_STRUCT* pBS)
+{
+	int w, h;
+	w = pBS->W;
+	h = pBS->H;
+	BYTE* clr_bmp = pBS->colorBmp;
+
+	//copy eye and nose image
+	//set parameters
+	int size_eye_w = 32;
+	int size_eye_h = 24;
+	int size_nose_w = 32;
+	int size_nose_h = 48;
+	TRACE_OBJECT *nose_obj, *leye_obj, *reye_obj;
+	nose_obj = &(pBS->pOtherVars->objNose);
+	leye_obj = &(pBS->pOtherVars->objLefteye);
+	reye_obj = &(pBS->pOtherVars->objRighteye);
+	int eye_width = pBS->pOtherVars->objLefteye.rcObject.width;
+	int eye_height = pBS->pOtherVars->objLefteye.rcObject.height;
+	int nose_width = pBS->pOtherVars->objNose.rcObject.width;
+	int nose_height = pBS->pOtherVars->objNose.rcObject.height;
+
+	//create temp memory, YUV422 plain format
+	BYTE* left_eye_open = (BYTE*)malloc(size_eye_w * size_eye_h * 2);
+	BYTE* right_eye_open = (BYTE*)malloc(size_eye_w * size_eye_h * 2);
+	BYTE* nose = (BYTE*)malloc(size_nose_w * size_nose_h * 2);
+
+	//copy the area and resample
+	copyTheAreaToTempMem(clr_bmp, w, h, leye_obj->rcObject.left, leye_obj->rcObject.top, leye_obj->rcObject.width, leye_obj->rcObject.height, left_eye_open, size_eye_w, size_eye_h);
+	copyTheAreaToTempMem(clr_bmp, w, h, reye_obj->rcObject.left, reye_obj->rcObject.top, reye_obj->rcObject.width, reye_obj->rcObject.height, right_eye_open, size_eye_w, size_eye_h);
+	copyTheAreaToTempMem(clr_bmp, w, h, nose_obj->rcObject.left, nose_obj->rcObject.top, nose_obj->rcObject.width, nose_obj->rcObject.height, nose, size_nose_w, size_nose_h);
+
+	//eye color check
+	int pixels_eye_uv = size_eye_w * size_eye_h/2;
+	BYTE* left_eye_open_u = left_eye_open + size_eye_w * size_eye_h;
+	BYTE* left_eye_open_v = left_eye_open + size_eye_w * size_eye_h * 3/2;
+	BYTE* right_eye_open_u = right_eye_open + size_eye_w * size_eye_h;
+	BYTE* right_eye_open_v = right_eye_open + size_eye_w * size_eye_h * 3/2;
+	BOOL flag = false;
+
+	int i;
+	int left_eye_count, left_face_count, right_eye_count, right_face_count;
+	int left_eye_pixel_sum_x, left_eye_pixel_sum_y, right_eye_pixel_sum_x, right_eye_pixel_sum_y;
+	left_eye_count = left_face_count = right_eye_count = right_face_count = 0;
+	left_eye_pixel_sum_x = left_eye_pixel_sum_y = right_eye_pixel_sum_x = right_eye_pixel_sum_y = 0;
+
+	for(i=0;i<pixels_eye_uv;i++){
+		if(left_eye_open_u[i] >= 124 && left_eye_open_u[i] <= 131 && left_eye_open_v[i] >= 121 && left_eye_open_v[i] <= 134){
+			left_eye_count++;
+			left_eye_pixel_sum_x += i%size_eye_w;
+			left_eye_pixel_sum_y += i/size_eye_w;
+		}else if(left_eye_open_u[i] >= 85 && left_eye_open_u[i] <= 126 && left_eye_open_v[i] >= 130 && left_eye_open_v[i] <= 165){
+			left_face_count++;
+		}
+
+		if(right_eye_open_u[i] >= 124 && right_eye_open_u[i] <= 131 && right_eye_open_v[i] >= 121 && right_eye_open_v[i] <= 134){
+			right_eye_count++;
+			right_eye_pixel_sum_x += i%size_eye_w;
+			right_eye_pixel_sum_y += i/size_eye_w;
+		}else if(right_eye_open_u[i] >= 85 && right_eye_open_u[i] <= 126 && right_eye_open_v[i] >= 130 && right_eye_open_v[i] <= 165){
+			right_face_count++;
+		}
+	}
+
+	//check num
+	if(left_eye_count < 200 || right_eye_count < 200 || 
+		left_face_count < 10 || left_face_count > 60 ||
+		right_face_count < 10 || right_face_count > 60){
+		flag = false;
+		return false;
+	}else{
+		flag = true;
+	}
+
+	//calculate center
+	if(flag){
+		int eye_bias_x, eye_bias_y;
+		//left
+		eye_bias_x = left_eye_pixel_sum_x / left_eye_count * (eye_width/size_eye_w);
+		eye_bias_y = left_eye_pixel_sum_y / left_eye_count * (eye_height/size_eye_h);
+		pBS->ptTheLeftEye.x = leye_obj->rcObject.left + eye_bias_x;
+		pBS->ptTheLeftEye.y = leye_obj->rcObject.top + eye_bias_y;
+		//right
+		eye_bias_x = right_eye_pixel_sum_x / right_eye_count * (eye_width/size_eye_w);
+		eye_bias_y = right_eye_pixel_sum_y / right_eye_count * (eye_height/size_eye_h);
+		pBS->ptTheRightEye.x = reye_obj->rcObject.left + eye_bias_x;
+		pBS->ptTheRightEye.y = reye_obj->rcObject.top + eye_bias_y;
+	}
+
+	//eyes position check
+	//in clrBmp_1d8
+	BYTE* clrBmp_1d8 = pBS->clrBmp_1d8;
+	int clrBmp_w = pBS->W/2;
+	int clrBmp_h = pBS->H/4;
+
+	int eye_pos_x_left_1d8 = pBS->ptTheLeftEye.x/2;
+	int eye_pos_y_left_1d8 = pBS->ptTheLeftEye.y/4;
+	int eye_pos_x_right_1d8 = pBS->ptTheRightEye.x/2;
+	int eye_pos_y_right_1d8 = pBS->ptTheRightEye.y/4;
+
+	//check
+	if(ifInArea(eye_pos_x_left_1d8, eye_pos_y_left_1d8, pBS->rcnFace) &&
+		ifInArea(eye_pos_x_right_1d8, eye_pos_y_right_1d8, pBS->rcnFace)){
+		flag = true;
+	}else{
+		flag = false;
+		return false;
+	}
+
+	//find face area at position x
+	int left = clrBmp_w;
+	int right = 0;
+	int i = eye_pos_y_left_1d8;
+	int j;
+	for(j=0;j<clrBmp_w;j++){
+		if(left_eye_open_u[i] >= 85 && left_eye_open_u[i] <= 126 && left_eye_open_v[i] >= 130 && left_eye_open_v[i] <= 165){
+			if(j < left) left = j;
+			if(j > right) right = j;
+		}
+	}
+
+	//check
+	if(left > right) return false;
+	if(eye_pos_x_left_1d8 < left || eye_pos_x_right_1d8 > right) return false;
+
+	//free memory
+	free(left_eye_open);
+	free(right_eye_open);
+	free(nose);
+
 	return flag;
 }
 
@@ -538,6 +703,15 @@ DLL_EXP void morphological(int w, int h, BUF_STRUCT* pBS, BYTE* tempImg)
 	int* widthY = (int*)malloc(myclass * sizeof(int));
 	getSizeAndCenterOfeachClass(w, h, tempImg, myclass, size, centerX, centerY, widthX, widthY);
 	BOOL flag = findEyes(myclass, size, centerX, centerY, pBS);
+	//free mem
+	free(size);
+	free(centerX);
+	free(centerY);
+	free(widthX);
+	free(widthY);
+
+	//copy and eye color check
+	
 	//draw eyes
 	COLORREF clr = TYUV1(250,250,0);
 	if(flag){
@@ -546,12 +720,7 @@ DLL_EXP void morphological(int w, int h, BUF_STRUCT* pBS, BYTE* tempImg)
 		DrawCross(pBS->displayImage, pBS->W, pBS->H, pBS->ptTheLeftEye.x, pBS->ptTheLeftEye.y, 10, clr, FALSE); 
 		DrawCross(pBS->displayImage, pBS->W, pBS->H, pBS->ptTheRightEye.x, pBS->ptTheRightEye.y, 10, clr, FALSE);
 
-	//free mem
-	free(size);
-	free(centerX);
-	free(centerY);
-	free(widthX);
-	free(widthY);
+
 }
 
 //end of self defined functions
