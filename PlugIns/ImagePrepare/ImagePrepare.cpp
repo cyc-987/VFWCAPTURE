@@ -92,6 +92,21 @@ DLL_EXP int ON_PLUGINCTRL(int nMode,void* pParameter)
 /****************************************************************************************/
 extern "C" _declspec(dllimport) void myHeapAllocInit(BUF_STRUCT* pBufStruct);
 
+DLL_EXP void initTraceObj(TRACE_OBJECT* obj)
+{
+	aRect* rc = &(obj->rcObject);
+	rc->left = 0;
+	rc->top = 0;
+	rc->width = 0;
+	rc->height = 0;
+
+	obj->spdxObj = obj->spdyObj = 0;
+	obj->nMinDist = 0x7fffffff;
+
+	obj->bBrokenTrace = obj->bSaveit = false;
+	obj->nBrokenTimes = 0;
+}
+
 DLL_EXP void ON_PLUGINRUN(int w,int h,BYTE* pYBits,BYTE* pUBits,BYTE* pVBits,BYTE* pBuffer)
 {
 //pYBits ´óÐ¡Îªw*h
@@ -131,7 +146,7 @@ DLL_EXP void ON_PLUGINRUN(int w,int h,BYTE* pYBits,BYTE* pUBits,BYTE* pVBits,BYT
 		pBS->H = h;
 		pBS->cur_allocSize = pBS->allocTimes = pBS->cur_maxallocsize = 0;
 		pBS->bLastEyeChecked = FALSE;
-		pBS->EyeBallConfirm = pBS->EyePosConfirm = TRUE;
+		pBS->EyeBallConfirm = pBS->EyePosConfirm = FALSE;
 		pBS->nImageQueueIndex = pBS->nLastImageIndex = -1;
 
 		//init hist map (skin colors)
@@ -145,6 +160,12 @@ DLL_EXP void ON_PLUGINRUN(int w,int h,BYTE* pYBits,BYTE* pUBits,BYTE* pVBits,BYT
 				other->byHistMap_V[i] = 1;
 			}
 		}
+
+		//init TraceObjects
+		initTraceObj(&(other->objNose));
+		initTraceObj(&(other->objLefteye));
+		initTraceObj(&(other->objRighteye));
+
 
 		//neglect FeaProcBuf
 

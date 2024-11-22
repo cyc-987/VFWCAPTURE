@@ -422,9 +422,9 @@ DLL_EXP void getSizeAndCenterOfeachClass(int w, int h, BYTE* tempImg, int myclas
     for (i = 1; i < myclass; i++) {
         if (pixelCount[i] > 0) {
             // Calculate size as area of bounding box
-            size[i] = (maxX[i] - minX[i] + 1) * (maxY[i] - minY[i] + 1);
-			widthX[i] = maxX[i] - minX[i] + 1;
+ 			widthX[i] = maxX[i] - minX[i] + 1;
 			widthY[i] = maxY[i] - minY[i] + 1;
+			size[i] = widthX[i]*widthX[i] + widthY[i]*widthY[i];
             
             // Calculate center coordinates
             centerX[i] /= pixelCount[i];
@@ -474,43 +474,24 @@ DLL_EXP BOOL findEyes(int myclass, int* size, int* centerX, int* centerY, BUF_ST
 				pBS->ptTheRightEye.y *= 4;
 
 				int nEyeDist = pBS->ptTheRightEye.x - pBS->ptTheLeftEye.x;
-				int nEyeWidth = nEyeDist * 3/2;
+				int nEyeWidth = nEyeDist * 2/3;
 				int nEyeHeight = nEyeDist/2;
-			
+
+				//verify eye size
 				if(nEyeWidth > pBS->W/4 || nEyeHeight > pBS->H/4){
 					ShowDebugMessage("eye size too large!");
 					flag = FALSE;
-					break;
+					continue;
 				}
 
-				//creat eye and nose object
-				int nose_center_x = (pBS->ptTheLeftEye.x + pBS->ptTheRightEye.x) / 2;
-				int nose_center_y = (pBS->ptTheLeftEye.y + pBS->ptTheRightEye.y) / 2 - nEyeDist / 2;
-				int nose_width = nEyeDist * 3/4;
-				int nose_height = nEyeDist;
-				if(pBS->bLastEyeChecked == false){
-					TRACE_OBJECT *nose_obj, *leye_obj, *reye_obj;
-					nose_obj = &(pBS->pOtherVars->objNose);
-					leye_obj = &(pBS->pOtherVars->objLefteye);
-					reye_obj = &(pBS->pOtherVars->objRighteye);
-
-					nose_obj->rcObject.left = nose_center_x - nose_width/2;
-					nose_obj->rcObject.top = nose_center_y - nose_height/2;
-					nose_obj->rcObject.width = ((int)(nose_width/4))*4; //make sure it is a multiple of 4
-					nose_obj->rcObject.height = ((int)(nose_height/4))*4;
-
-					leye_obj->rcObject.left = pBS->ptTheLeftEye.x - nEyeWidth/2;
-					leye_obj->rcObject.top = pBS->ptTheLeftEye.y - nEyeHeight/2;
-					leye_obj->rcObject.width = ((int)(nEyeWidth/4))*4;
-					leye_obj->rcObject.height = ((int)(nEyeHeight/4))*4;
-
-					reye_obj->rcObject.left = pBS->ptTheRightEye.x - nEyeWidth/2;
-					reye_obj->rcObject.top = pBS->ptTheRightEye.y - nEyeHeight/2;
-					reye_obj->rcObject.width = ((int)(nEyeWidth/4))*4;
-					reye_obj->rcObject.height = ((int)(nEyeHeight/4))*4;
+				//verify eye position
+				if(pBS->ptTheLeftEye.x < 0 || pBS->ptTheLeftEye.y < 0 || pBS->ptTheRightEye.x < 0 || pBS->ptTheRightEye.y < 0
+				|| pBS->ptTheLeftEye.x > pBS->W || pBS->ptTheLeftEye.y > pBS->H || pBS->ptTheRightEye.x > pBS->W || pBS->ptTheRightEye.y > pBS->H){
+					ShowDebugMessage("eye position error!");
+					flag = FALSE;
+					continue;
 				}
-
-				//
+				
 				ShowDebugMessage("eye1: %d, %d; eye2: %d, %d", centerX[i], centerY[i], centerX[j], centerY[j]);
 				//set true
 				ShowDebugMessage("find eyes!");
@@ -520,8 +501,48 @@ DLL_EXP BOOL findEyes(int myclass, int* size, int* centerX, int* centerY, BUF_ST
 		}
 		if(flag) break;
 	}
+	pBS->EyePosConfirm = flag;//set flag
 	return flag;
 }
+
+DLL_EXP void copyAndResampleEyeNosePic(BUF_STRUCT* pBS)
+{
+	if(pBS->EyePosConfirm == FALSE || pBS->bLastEyeChecked == TRUE){
+		return;
+	}
+	//step1: creat eye and nose object, copy
+	int nEyeDist = pBS->ptTheRightEye.x - pBS->ptTheLeftEye.x;
+	int nEyeWidth = nEyeDist * 2/3;
+	int nEyeHeight = nEyeDist/2;
+
+	int nose_center_x = (pBS->ptTheLeftEye.x + pBS->ptTheRightEye.x) / 2;
+	int nose_center_y = (pBS->ptTheLeftEye.y + pBS->ptTheRightEye.y) / 2 - nEyeDist / 2;
+	int nose_width = nEyeDist * 3/4;
+	int nose_height = nEyeDist;
+
+	TRACE_OBJECT *nose_obj, *leye_obj, *reye_obj;
+	nose_obj = &(pBS->pOtherVars->objNose);
+	leye_obj = &(pBS->pOtherVars->objLefteye);
+	reye_obj = &(pBS->pOtherVars->objRighteye);
+
+	nose_obj->rcObject.left = nose_center_x - nose_width/2;
+	nose_obj->rcObject.top = nose_center_y - nose_height/2;
+	nose_obj->rcObject.width = ((int)(nose_width/4))*4; //make sure it is a multiple of 4
+	nose_obj->rcObject.height = ((int)(nose_height/4))*4;
+
+	leye_obj->rcObject.left = pBS->ptTheLeftEye.x - nEyeWidth/2;
+	leye_obj->rcObject.top = pBS->ptTheLeftEye.y - nEyeHeight/2;
+	leye_obj->rcObject.width = ((int)(nEyeWidth/4))*4;
+	leye_obj->rcObject.height = ((int)(nEyeHeight/4))*4;
+
+	reye_obj->rcObject.left = pBS->ptTheRightEye.x - nEyeWidth/2;
+	reye_obj->rcObject.top = pBS->ptTheRightEye.y - nEyeHeight/2;
+	reye_obj->rcObject.width = ((int)(nEyeWidth/4))*4;
+	reye_obj->rcObject.height = ((int)(nEyeHeight/4))*4;
+
+	//step2: resample and copy
+}
+
 //copy the area to temp memory
 DLL_EXP void copyTheAreaToTempMem(BYTE* source, 
 								int source_w, int source_h, 
@@ -667,7 +688,7 @@ DLL_EXP BOOL copyAndCheckEyeColor(BUF_STRUCT* pBS)
 	//find face area at position x
 	int left = clrBmp_w;
 	int right = 0;
-	int i = eye_pos_y_left_1d8;
+	i = eye_pos_y_left_1d8;
 	int j;
 	for(j=0;j<clrBmp_w;j++){
 		if(left_eye_open_u[i] >= 85 && left_eye_open_u[i] <= 126 && left_eye_open_v[i] >= 130 && left_eye_open_v[i] <= 165){
@@ -721,6 +742,12 @@ DLL_EXP void morphological(int w, int h, BUF_STRUCT* pBS, BYTE* tempImg)
 		DrawCross(pBS->displayImage, pBS->W, pBS->H, pBS->ptTheRightEye.x, pBS->ptTheRightEye.y, 10, clr, FALSE);
 
 
+}
+
+DLL_EXP void verifyingEyes(BUF_STRUCT* pBS)
+{
+	copyAndResampleEyeNosePic(pBS);
+	return;
 }
 
 //end of self defined functions
