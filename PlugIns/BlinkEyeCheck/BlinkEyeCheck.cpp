@@ -492,9 +492,9 @@ DLL_EXP BOOL findEyes(int myclass, int* size, int* centerX, int* centerY, BUF_ST
 					continue;
 				}
 				
-				ShowDebugMessage("eye1: %d, %d; eye2: %d, %d", centerX[i], centerY[i], centerX[j], centerY[j]);
+				// ShowDebugMessage("eye1: %d, %d; eye2: %d, %d", centerX[i], centerY[i], centerX[j], centerY[j]);
 				//set true
-				ShowDebugMessage("find eyes!");
+				// ShowDebugMessage("find eyes!");
 				flag = TRUE;
 			}
 			if(flag) break;
@@ -522,12 +522,14 @@ DLL_EXP void copyImgAreaToMem(BYTE* source,
 		}
 	}
 	//copy UV vector
+	BYTE* tempU = temp + source_area_width * source_area_height;
+	BYTE* tempV = tempU + source_area_width * source_area_height / 2;
 	BYTE* source_U = source + source_w * source_h;
 	BYTE* source_V = source_U + source_w * source_h / 2;
-	for(i=0;i<source_area_height/2;i++){
+	for(i=0;i<source_area_height;i++){
 		for(j=0;j<source_area_width/2;j++){
-			temp[source_area_width*source_area_height+i*source_area_width/2+j] = source_U[(source_area_top/2+i)*source_w/2+source_area_left/2+j];
-			temp[source_area_width*source_area_height*3/2+i*source_area_width/2+j] = source_V[(source_area_top/2+i)*source_w/2+source_area_left/2+j];
+			tempU[i*source_area_width/2+j] = source_U[(source_area_top+i)*source_w/2+source_area_left/2+j];
+			tempV[i*source_area_width/2+j] = source_V[(source_area_top+i)*source_w/2+source_area_left/2+j];
 		}
 	}
 	//resample to dest
@@ -536,20 +538,32 @@ DLL_EXP void copyImgAreaToMem(BYTE* source,
 	free(temp);
 }
 
-DLL_EXP void copyAndResampleEyeNosePic(BUF_STRUCT* pBS, BYTE* _lefteyeOpen, BYTE* _righteyeOpen, BYTE* _stnose)
+DLL_EXP BOOL checkCalcStatus(BUF_STRUCT* pBS) //check if the calc is needed
 {
-	//check
 	if(!pBS->EyePosConfirm){
-		return; //if not confirmed, return
+		return false; //if not confirmed or previous calc failed, return
 	}
 	TRACE_OBJECT *nose_obj, *leye_obj, *reye_obj;
 	nose_obj = &(pBS->pOtherVars->objNose);
 	leye_obj = &(pBS->pOtherVars->objLefteye);
 	reye_obj = &(pBS->pOtherVars->objRighteye);
 	if(pBS->bLastEyeChecked && !nose_obj->bBrokenTrace && !leye_obj->bBrokenTrace && !reye_obj->bBrokenTrace){
-		return; //if not broken, return
+		return false; //if the last eye checked and the trace is not broken, there is no need to calc again
+	}
+	return true; //then calc
+}
+
+DLL_EXP void copyAndResampleEyeNosePic(BUF_STRUCT* pBS, BYTE* _lefteyeOpen, BYTE* _righteyeOpen, BYTE* _stnose)
+{
+	//check
+	if(!checkCalcStatus(pBS)){
+		return;
 	}
 
+	TRACE_OBJECT *nose_obj, *leye_obj, *reye_obj;
+	nose_obj = &(pBS->pOtherVars->objNose);
+	leye_obj = &(pBS->pOtherVars->objLefteye);
+	reye_obj = &(pBS->pOtherVars->objRighteye);
 
 	//step1: creat eye and nose object, copy
 	int nEyeDist = pBS->ptTheRightEye.x - pBS->ptTheLeftEye.x;
@@ -594,150 +608,118 @@ DLL_EXP void copyAndResampleEyeNosePic(BUF_STRUCT* pBS, BYTE* _lefteyeOpen, BYTE
 	return;
 }
 
-//check in area
-DLL_EXP BOOL ifInArea(int x, int y, aRect area)
+//eye color and pos check
+DLL_EXP BOOL checkEyeClrAndPos(BUF_STRUCT* pBS, BYTE* _lefteyeOpen, BYTE* _righteyeOpen)
 {
-	BOOL flag = false;
-	if(x >= area.left && x <= area.left + area.width && y >= area.top && y <= area.top + area.height){
-		flag = true;
+	//check
+	if(!checkCalcStatus(pBS)){
+		pBS->EyePosConfirm = false; //set again in case of previous calc failed
+		return false;
 	}
+	// ShowDebugMessage("checkEyeClrAndPos");
 
-	return flag;
-}
+	//step1: check eye color
+	BYTE* leye_U = _lefteyeOpen + 32 * 24;
+	BYTE* leye_V = _lefteyeOpen + 32 * 24 * 3/2;
+	BYTE* reye_U = _righteyeOpen + 32 * 24;
+	BYTE* reye_V = _righteyeOpen + 32 * 24 * 3/2;
 
-//copy and check eye color
-DLL_EXP BOOL copyAndCheckEyeColor(BUF_STRUCT* pBS)
-{
-	int w, h;
-	w = pBS->W;
-	h = pBS->H;
-	BYTE* clr_bmp = pBS->colorBmp;
+	int face_count_left, face_count_right, eye_count_left, eye_count_right;
+	int eye_pixel_sum_x_left, eye_pixel_sum_y_left, eye_pixel_sum_x_right, eye_pixel_sum_y_right;
+	face_count_left = face_count_right = eye_count_left = eye_count_right = 0;
+	eye_pixel_sum_x_left = eye_pixel_sum_y_left = eye_pixel_sum_x_right = eye_pixel_sum_y_right = 0;
 
-	//copy eye and nose image
-	//set parameters
-	int size_eye_w = 32;
-	int size_eye_h = 24;
-	int size_nose_w = 32;
-	int size_nose_h = 48;
-	TRACE_OBJECT *nose_obj, *leye_obj, *reye_obj;
-	nose_obj = &(pBS->pOtherVars->objNose);
-	leye_obj = &(pBS->pOtherVars->objLefteye);
-	reye_obj = &(pBS->pOtherVars->objRighteye);
-	int eye_width = pBS->pOtherVars->objLefteye.rcObject.width;
-	int eye_height = pBS->pOtherVars->objLefteye.rcObject.height;
-	int nose_width = pBS->pOtherVars->objNose.rcObject.width;
-	int nose_height = pBS->pOtherVars->objNose.rcObject.height;
+	aBYTE* histmapU = pBS->pOtherVars->byHistMap_U;
+	aBYTE* histmapV = pBS->pOtherVars->byHistMap_V;
 
-	//create temp memory, YUV422 plain format
-	BYTE* left_eye_open = (BYTE*)malloc(size_eye_w * size_eye_h * 2);
-	BYTE* right_eye_open = (BYTE*)malloc(size_eye_w * size_eye_h * 2);
-	BYTE* nose = (BYTE*)malloc(size_nose_w * size_nose_h * 2);
+	int i,j;
+	for(j=0;j<24;j++){ //count pixels
+		for(i=0;i<16;i++){
+			if(leye_U[j*16+i] >= 115 && leye_U[j*16+i] <= 131 && leye_V[j*16+i] >= 121 && leye_V[j*16+i] <= 140){
+				eye_count_left++;
+				eye_pixel_sum_x_left += 2*i;
+				eye_pixel_sum_y_left += j;
+			}
+			if(histmapU[leye_U[j*16+i]] && histmapV[leye_V[j*16+i]]){
+				face_count_left++;
+			}
 
-	//copy the area and resample
-	copyImgAreaToMem(clr_bmp, w, h, leye_obj->rcObject.left, leye_obj->rcObject.top, leye_obj->rcObject.width, leye_obj->rcObject.height, left_eye_open, size_eye_w, size_eye_h);
-	copyImgAreaToMem(clr_bmp, w, h, reye_obj->rcObject.left, reye_obj->rcObject.top, reye_obj->rcObject.width, reye_obj->rcObject.height, right_eye_open, size_eye_w, size_eye_h);
-	copyImgAreaToMem(clr_bmp, w, h, nose_obj->rcObject.left, nose_obj->rcObject.top, nose_obj->rcObject.width, nose_obj->rcObject.height, nose, size_nose_w, size_nose_h);
-
-	//eye color check
-	int pixels_eye_uv = size_eye_w * size_eye_h/2;
-	BYTE* left_eye_open_u = left_eye_open + size_eye_w * size_eye_h;
-	BYTE* left_eye_open_v = left_eye_open + size_eye_w * size_eye_h * 3/2;
-	BYTE* right_eye_open_u = right_eye_open + size_eye_w * size_eye_h;
-	BYTE* right_eye_open_v = right_eye_open + size_eye_w * size_eye_h * 3/2;
-	BOOL flag = false;
-
-	int i;
-	int left_eye_count, left_face_count, right_eye_count, right_face_count;
-	int left_eye_pixel_sum_x, left_eye_pixel_sum_y, right_eye_pixel_sum_x, right_eye_pixel_sum_y;
-	left_eye_count = left_face_count = right_eye_count = right_face_count = 0;
-	left_eye_pixel_sum_x = left_eye_pixel_sum_y = right_eye_pixel_sum_x = right_eye_pixel_sum_y = 0;
-
-	for(i=0;i<pixels_eye_uv;i++){
-		if(left_eye_open_u[i] >= 124 && left_eye_open_u[i] <= 131 && left_eye_open_v[i] >= 121 && left_eye_open_v[i] <= 134){
-			left_eye_count++;
-			left_eye_pixel_sum_x += i%size_eye_w;
-			left_eye_pixel_sum_y += i/size_eye_w;
-		}else if(left_eye_open_u[i] >= 85 && left_eye_open_u[i] <= 126 && left_eye_open_v[i] >= 130 && left_eye_open_v[i] <= 165){
-			left_face_count++;
-		}
-
-		if(right_eye_open_u[i] >= 124 && right_eye_open_u[i] <= 131 && right_eye_open_v[i] >= 121 && right_eye_open_v[i] <= 134){
-			right_eye_count++;
-			right_eye_pixel_sum_x += i%size_eye_w;
-			right_eye_pixel_sum_y += i/size_eye_w;
-		}else if(right_eye_open_u[i] >= 85 && right_eye_open_u[i] <= 126 && right_eye_open_v[i] >= 130 && right_eye_open_v[i] <= 165){
-			right_face_count++;
+			if(reye_U[j*16+i] >= 115 && reye_U[j*16+i] <= 131 && reye_V[j*16+i] >= 121 && reye_V[j*16+i] <= 140){
+				eye_count_right++;
+				eye_pixel_sum_x_right += 2*i;
+				eye_pixel_sum_y_right += j;
+			}
+			if(histmapU[reye_U[j*16+i]] && histmapV[reye_V[j*16+i]]){
+				face_count_right++;
+			}
 		}
 	}
+	// ShowDebugMessage("eye count: %d, %d", eye_count_left, eye_count_right);
+	// ShowDebugMessage("face count: %d, %d", face_count_left, face_count_right);
 
 	//check num
-	if(left_eye_count < 200 || right_eye_count < 200 || 
-		left_face_count < 10 || left_face_count > 60 ||
-		right_face_count < 10 || right_face_count > 60){
-		flag = false;
-		return false;
+	bool check_flag = false;
+	if(face_count_left >= 200 && face_count_right >= 200 && 
+		eye_count_left >= 10 && eye_count_left <= 60 &&
+		eye_count_right >= 10 && eye_count_right <= 60){
+			check_flag = true;
 	}else{
-		flag = true;
+		check_flag = false;
+		pBS->EyePosConfirm = false;
+		return false;
 	}
+	ShowDebugMessage("check face and eye num pass");
 
-	//calculate center
-	if(flag){
-		int eye_bias_x, eye_bias_y;
-		//left
-		eye_bias_x = left_eye_pixel_sum_x / left_eye_count * (eye_width/size_eye_w);
-		eye_bias_y = left_eye_pixel_sum_y / left_eye_count * (eye_height/size_eye_h);
-		pBS->ptTheLeftEye.x = leye_obj->rcObject.left + eye_bias_x;
-		pBS->ptTheLeftEye.y = leye_obj->rcObject.top + eye_bias_y;
-		//right
-		eye_bias_x = right_eye_pixel_sum_x / right_eye_count * (eye_width/size_eye_w);
-		eye_bias_y = right_eye_pixel_sum_y / right_eye_count * (eye_height/size_eye_h);
-		pBS->ptTheRightEye.x = reye_obj->rcObject.left + eye_bias_x;
-		pBS->ptTheRightEye.y = reye_obj->rcObject.top + eye_bias_y;
-	}
+	//calculate centers
+	int eye_bias_x_left, eye_bias_y_left, eye_bias_x_right, eye_bias_y_right;
+	eye_bias_x_left = eye_pixel_sum_x_left / eye_count_left;
+	eye_bias_y_left = eye_pixel_sum_y_left / eye_count_left;
+	eye_bias_x_right = eye_pixel_sum_x_right / eye_count_right;
+	eye_bias_y_right = eye_pixel_sum_y_right / eye_count_right;
 
-	//eyes position check
-	//in clrBmp_1d8
+	TRACE_OBJECT *leye_obj, *reye_obj;
+	leye_obj = &(pBS->pOtherVars->objLefteye);
+	reye_obj = &(pBS->pOtherVars->objRighteye);
+
+	aPOINT ptLeftEye_cfm, ptRightEye_cfm;
+	ptLeftEye_cfm.x = leye_obj->rcObject.left + eye_bias_x_left;
+	ptLeftEye_cfm.y = leye_obj->rcObject.top + eye_bias_y_left;
+	ptRightEye_cfm.x = reye_obj->rcObject.left + eye_bias_x_right;
+	ptRightEye_cfm.y = reye_obj->rcObject.top + eye_bias_y_right;
+
+	//step2: check eye position
 	BYTE* clrBmp_1d8 = pBS->clrBmp_1d8;
-	int clrBmp_w = pBS->W/2;
-	int clrBmp_h = pBS->H/4;
+	BYTE* clrBmp_1d8_U = clrBmp_1d8 + pBS->W/2 * pBS->H/4;
+	BYTE* clrBmp_1d8_V = clrBmp_1d8_U + pBS->W/4 * pBS->H/4;
+	aRect* face_area_1d8 = &(pBS->rcnFace);
 
-	int eye_pos_x_left_1d8 = pBS->ptTheLeftEye.x/2;
-	int eye_pos_y_left_1d8 = pBS->ptTheLeftEye.y/4;
-	int eye_pos_x_right_1d8 = pBS->ptTheRightEye.x/2;
-	int eye_pos_y_right_1d8 = pBS->ptTheRightEye.y/4;
+	int eyes_center_y = (ptLeftEye_cfm.y + ptRightEye_cfm.y) / 2;
 
-	//check
-	if(ifInArea(eye_pos_x_left_1d8, eye_pos_y_left_1d8, pBS->rcnFace) &&
-		ifInArea(eye_pos_x_right_1d8, eye_pos_y_right_1d8, pBS->rcnFace)){
-		flag = true;
+	int face_left = 2*face_area_1d8->left;
+	int face_top = 4*face_area_1d8->top;
+	int face_width = 2*face_area_1d8->width;
+	int face_height = 4*face_area_1d8->height;
+	
+	int face_right = face_left + face_width;
+	int face_bottom = face_top + face_height;
+
+	check_flag = false;
+	if(ptLeftEye_cfm.x >= face_left && ptLeftEye_cfm.x <= face_right && 
+		ptLeftEye_cfm.y >= face_top && ptLeftEye_cfm.y <= face_bottom &&
+		ptRightEye_cfm.x >= face_left && ptRightEye_cfm.x <= face_right && 
+		ptRightEye_cfm.y >= face_top && ptRightEye_cfm.y <= face_bottom &&
+		ptLeftEye_cfm.x < ptRightEye_cfm.x){
+			check_flag = true;
 	}else{
-		flag = false;
+		check_flag = false;
+		pBS->EyePosConfirm = false;
 		return false;
 	}
-
-	//find face area at position x
-	int left = clrBmp_w;
-	int right = 0;
-	i = eye_pos_y_left_1d8;
-	int j;
-	for(j=0;j<clrBmp_w;j++){
-		if(left_eye_open_u[i] >= 85 && left_eye_open_u[i] <= 126 && left_eye_open_v[i] >= 130 && left_eye_open_v[i] <= 165){
-			if(j < left) left = j;
-			if(j > right) right = j;
-		}
-	}
-
-	//check
-	if(left > right) return false;
-	if(eye_pos_x_left_1d8 < left || eye_pos_x_right_1d8 > right) return false;
-
-	//free memory
-	free(left_eye_open);
-	free(right_eye_open);
-	free(nose);
-
-	return flag;
+	ShowDebugMessage("check eye position pass");
+	
+	return true;
 }
+
 
 //morphological operation
 DLL_EXP void morphological(int w, int h, BUF_STRUCT* pBS, BYTE* tempImg)
@@ -766,7 +748,7 @@ DLL_EXP void morphological(int w, int h, BUF_STRUCT* pBS, BYTE* tempImg)
 	//draw eyes
 	COLORREF clr = TYUV1(250,250,0);
 	if(flag){
-		ShowDebugMessage("left: %d, %d, right: %d, %d", pBS->ptTheLeftEye.x, pBS->ptTheLeftEye.y, pBS->ptTheRightEye.x, pBS->ptTheRightEye.y);
+		// ShowDebugMessage("left: %d, %d, right: %d, %d", pBS->ptTheLeftEye.x, pBS->ptTheLeftEye.y, pBS->ptTheRightEye.x, pBS->ptTheRightEye.y);
 	}
 		DrawCross(pBS->displayImage, pBS->W, pBS->H, pBS->ptTheLeftEye.x, pBS->ptTheLeftEye.y, 10, clr, FALSE); 
 		DrawCross(pBS->displayImage, pBS->W, pBS->H, pBS->ptTheRightEye.x, pBS->ptTheRightEye.y, 10, clr, FALSE);
@@ -776,13 +758,21 @@ DLL_EXP void morphological(int w, int h, BUF_STRUCT* pBS, BYTE* tempImg)
 
 DLL_EXP void verifyingEyes(BUF_STRUCT* pBS)
 {
+	//malloc memory
 	BYTE* _lefteyeOpen = (BYTE*)malloc(32*24*2);
 	BYTE* _righteyeOpen = (BYTE*)malloc(32*24*2);
 	BYTE* _stnose = (BYTE*)malloc(32*48*2);
 
+	bool flag = true;
+	//copy and resample
 	copyAndResampleEyeNosePic(pBS, _lefteyeOpen, _righteyeOpen, _stnose);
+	//eye color and position check
+	flag = checkEyeClrAndPos(pBS, _lefteyeOpen, _righteyeOpen);
 
 	//test
+	if(flag){
+		ShowDebugMessage("eye verification passed!");
+	}
 	if(bLastPlugin){
 		CopyToRect(_lefteyeOpen, pBS->displayImage, 32, 24, pBS->W, pBS->H, 0, 0, false);
 		CopyToRect(_righteyeOpen, pBS->displayImage, 32, 24, pBS->W, pBS->H, 0, 24, false);
