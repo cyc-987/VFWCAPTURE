@@ -510,10 +510,16 @@ DLL_EXP void copyImgAreaToMem(BYTE* source,
 								int source_w, int source_h, 
 								int source_area_left, int source_area_top, int source_area_width, int source_area_height,
 								BYTE* dest,
-								int dest_w, int dest_h)
+								int dest_w, int dest_h,
+								bool bGray)
 {
 	//temp mem
-	BYTE* temp = (BYTE*)malloc(source_area_width * source_area_height * 2);
+	BYTE* temp;
+	if(bGray){
+		temp = (BYTE*)malloc(source_area_width * source_area_height);
+	}else{
+		temp = (BYTE*)malloc(source_area_width * source_area_height * 2);
+	}
 	//copy to temp mem, Y vector
 	int i,j;
 	for(i=0;i<source_area_height;i++){
@@ -522,18 +528,20 @@ DLL_EXP void copyImgAreaToMem(BYTE* source,
 		}
 	}
 	//copy UV vector
-	BYTE* tempU = temp + source_area_width * source_area_height;
-	BYTE* tempV = tempU + source_area_width * source_area_height / 2;
-	BYTE* source_U = source + source_w * source_h;
-	BYTE* source_V = source_U + source_w * source_h / 2;
-	for(i=0;i<source_area_height;i++){
-		for(j=0;j<source_area_width/2;j++){
-			tempU[i*source_area_width/2+j] = source_U[(source_area_top+i)*source_w/2+source_area_left/2+j];
-			tempV[i*source_area_width/2+j] = source_V[(source_area_top+i)*source_w/2+source_area_left/2+j];
+	if(!bGray){
+		BYTE* tempU = temp + source_area_width * source_area_height;
+		BYTE* tempV = tempU + source_area_width * source_area_height / 2;
+		BYTE* source_U = source + source_w * source_h;
+		BYTE* source_V = source_U + source_w * source_h / 2;
+		for(i=0;i<source_area_height;i++){
+			for(j=0;j<source_area_width/2;j++){
+				tempU[i*source_area_width/2+j] = source_U[(source_area_top+i)*source_w/2+source_area_left/2+j];
+				tempV[i*source_area_width/2+j] = source_V[(source_area_top+i)*source_w/2+source_area_left/2+j];
+			}
 		}
 	}
 	//resample to dest
-	ReSample(temp, source_area_width, source_area_height, dest_w, dest_h, false, false, dest);
+	ReSample(temp, source_area_width, source_area_height, dest_w, dest_h, false, bGray, dest);
 	//free mem
 	free(temp);
 }
@@ -599,11 +607,11 @@ DLL_EXP void copyAndResampleEyeNosePic(BUF_STRUCT* pBS, BYTE* _lefteyeOpen, BYTE
 
 	//step2: resample and copy
 	copyImgAreaToMem(pBS->colorBmp, pBS->W, pBS->H, leye_obj->rcObject.left, leye_obj->rcObject.top, 
-					nEyeWidth, nEyeHeight, _lefteyeOpen, 32, 24);
+					nEyeWidth, nEyeHeight, _lefteyeOpen, 32, 24, false);
 	copyImgAreaToMem(pBS->colorBmp, pBS->W, pBS->H, reye_obj->rcObject.left, reye_obj->rcObject.top,
-					nEyeWidth, nEyeHeight, _righteyeOpen, 32, 24);
+					nEyeWidth, nEyeHeight, _righteyeOpen, 32, 24, false);
 	copyImgAreaToMem(pBS->colorBmp, pBS->W, pBS->H, nose_obj->rcObject.left, nose_obj->rcObject.top,
-					nose_width, nose_height, _stnose, 32, 48);
+					nose_width, nose_height, _stnose, 32, 48, false);
 	
 	return;
 }
@@ -616,7 +624,7 @@ DLL_EXP BOOL checkEyeClrAndPos(BUF_STRUCT* pBS, BYTE* _lefteyeOpen, BYTE* _right
 		pBS->EyePosConfirm = false; //set again in case of previous calc failed
 		return false;
 	}
-	// ShowDebugMessage("checkEyeClrAndPos");
+	ShowDebugMessage("checkEyeClrAndPos");
 
 	//step1: check eye color
 	BYTE* leye_U = _lefteyeOpen + 32 * 24;
@@ -743,8 +751,6 @@ DLL_EXP void morphological(int w, int h, BUF_STRUCT* pBS, BYTE* tempImg)
 	free(widthX);
 	free(widthY);
 
-	//copy and eye color check
-	
 	//draw eyes
 	COLORREF clr = TYUV1(250,250,0);
 	if(flag){
@@ -786,6 +792,21 @@ DLL_EXP void verifyingEyes(BUF_STRUCT* pBS)
 	return;
 }
 
+DLL_EXP void calcGrayFourCornerCentroid(BYTE* pImg, int imgW, int imgH, aPOINT* Vector)
+{
+
+}
+
+DLL_EXP void pickObjFeature(BUF_STRUCT* pBS)
+{
+	//check
+	if(!checkCalcStatus(pBS)){
+		return;
+	}
+
+	return;
+}
+
 //end of self defined functions
 
 DLL_EXP void ON_PLUGINRUN(int w,int h,BYTE* pYBits,BYTE* pUBits,BYTE* pVBits,BYTE* pBuffer)
@@ -812,6 +833,8 @@ DLL_EXP void ON_PLUGINRUN(int w,int h,BYTE* pYBits,BYTE* pUBits,BYTE* pVBits,BYT
 	morphological(w/4, h/4, pBS, tempImg);
 	//verifying eyes
 	verifyingEyes(pBS);
+	//pick obj feature
+	pickObjFeature(pBS);
 
 	//free mem
 	myHeapFree(tempImg);
