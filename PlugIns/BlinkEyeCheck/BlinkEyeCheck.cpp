@@ -505,11 +505,52 @@ DLL_EXP BOOL findEyes(int myclass, int* size, int* centerX, int* centerY, BUF_ST
 	return flag;
 }
 
-DLL_EXP void copyAndResampleEyeNosePic(BUF_STRUCT* pBS)
+//copy the area to temp memory
+DLL_EXP void copyImgAreaToMem(BYTE* source, 
+								int source_w, int source_h, 
+								int source_area_left, int source_area_top, int source_area_width, int source_area_height,
+								BYTE* dest,
+								int dest_w, int dest_h)
 {
-	if(pBS->EyePosConfirm == FALSE || pBS->bLastEyeChecked == TRUE){
-		return;
+	//temp mem
+	BYTE* temp = (BYTE*)malloc(source_area_width * source_area_height * 2);
+	//copy to temp mem, Y vector
+	int i,j;
+	for(i=0;i<source_area_height;i++){
+		for(j=0;j<source_area_width;j++){
+			temp[i*source_area_width+j] = source[(source_area_top+i)*source_w+source_area_left+j];
+		}
 	}
+	//copy UV vector
+	BYTE* source_U = source + source_w * source_h;
+	BYTE* source_V = source_U + source_w * source_h / 2;
+	for(i=0;i<source_area_height/2;i++){
+		for(j=0;j<source_area_width/2;j++){
+			temp[source_area_width*source_area_height+i*source_area_width/2+j] = source_U[(source_area_top/2+i)*source_w/2+source_area_left/2+j];
+			temp[source_area_width*source_area_height*3/2+i*source_area_width/2+j] = source_V[(source_area_top/2+i)*source_w/2+source_area_left/2+j];
+		}
+	}
+	//resample to dest
+	ReSample(temp, source_area_width, source_area_height, dest_w, dest_h, false, false, dest);
+	//free mem
+	free(temp);
+}
+
+DLL_EXP void copyAndResampleEyeNosePic(BUF_STRUCT* pBS, BYTE* _lefteyeOpen, BYTE* _righteyeOpen, BYTE* _stnose)
+{
+	//check
+	if(!pBS->EyePosConfirm){
+		return; //if not confirmed, return
+	}
+	TRACE_OBJECT *nose_obj, *leye_obj, *reye_obj;
+	nose_obj = &(pBS->pOtherVars->objNose);
+	leye_obj = &(pBS->pOtherVars->objLefteye);
+	reye_obj = &(pBS->pOtherVars->objRighteye);
+	if(pBS->bLastEyeChecked && !nose_obj->bBrokenTrace && !leye_obj->bBrokenTrace && !reye_obj->bBrokenTrace){
+		return; //if not broken, return
+	}
+
+
 	//step1: creat eye and nose object, copy
 	int nEyeDist = pBS->ptTheRightEye.x - pBS->ptTheLeftEye.x;
 	int nEyeWidth = nEyeDist * 2/3;
@@ -520,50 +561,39 @@ DLL_EXP void copyAndResampleEyeNosePic(BUF_STRUCT* pBS)
 	int nose_width = nEyeDist * 3/4;
 	int nose_height = nEyeDist;
 
-	TRACE_OBJECT *nose_obj, *leye_obj, *reye_obj;
-	nose_obj = &(pBS->pOtherVars->objNose);
-	leye_obj = &(pBS->pOtherVars->objLefteye);
-	reye_obj = &(pBS->pOtherVars->objRighteye);
+	//make width and height multiple of 4
+	nEyeWidth = ((int)(nEyeWidth/4))*4;
+	nEyeHeight = ((int)(nEyeHeight/4))*4;
+	nose_width = ((int)(nose_width/4))*4;
+	nose_height = ((int)(nose_height/4))*4;
+
 
 	nose_obj->rcObject.left = nose_center_x - nose_width/2;
-	nose_obj->rcObject.top = nose_center_y - nose_height/2;
-	nose_obj->rcObject.width = ((int)(nose_width/4))*4; //make sure it is a multiple of 4
-	nose_obj->rcObject.height = ((int)(nose_height/4))*4;
+	nose_obj->rcObject.top = nose_center_y + nose_height/2;
+	nose_obj->rcObject.width = nose_width;
+	nose_obj->rcObject.height = nose_height;
 
 	leye_obj->rcObject.left = pBS->ptTheLeftEye.x - nEyeWidth/2;
 	leye_obj->rcObject.top = pBS->ptTheLeftEye.y - nEyeHeight/2;
-	leye_obj->rcObject.width = ((int)(nEyeWidth/4))*4;
-	leye_obj->rcObject.height = ((int)(nEyeHeight/4))*4;
+	leye_obj->rcObject.width = nEyeWidth;
+	leye_obj->rcObject.height = nEyeHeight;
 
 	reye_obj->rcObject.left = pBS->ptTheRightEye.x - nEyeWidth/2;
 	reye_obj->rcObject.top = pBS->ptTheRightEye.y - nEyeHeight/2;
-	reye_obj->rcObject.width = ((int)(nEyeWidth/4))*4;
-	reye_obj->rcObject.height = ((int)(nEyeHeight/4))*4;
+	reye_obj->rcObject.width = nEyeWidth;
+	reye_obj->rcObject.height = nEyeHeight;
 
 	//step2: resample and copy
+	copyImgAreaToMem(pBS->colorBmp, pBS->W, pBS->H, leye_obj->rcObject.left, leye_obj->rcObject.top, 
+					nEyeWidth, nEyeHeight, _lefteyeOpen, 32, 24);
+	copyImgAreaToMem(pBS->colorBmp, pBS->W, pBS->H, reye_obj->rcObject.left, reye_obj->rcObject.top,
+					nEyeWidth, nEyeHeight, _righteyeOpen, 32, 24);
+	copyImgAreaToMem(pBS->colorBmp, pBS->W, pBS->H, nose_obj->rcObject.left, nose_obj->rcObject.top,
+					nose_width, nose_height, _stnose, 32, 48);
+	
+	return;
 }
 
-//copy the area to temp memory
-DLL_EXP void copyTheAreaToTempMem(BYTE* source, 
-								int source_w, int source_h, 
-								int source_area_left, int source_area_top, int source_area_width, int source_area_height,
-								BYTE* dest,
-								int dest_w, int dest_h)
-{
-	//temp mem
-	BYTE* temp = (BYTE*)malloc(source_area_width * source_area_height * 2);
-	//copy to temp mem
-	int i,j;
-	for(i=0;i<source_area_height;i++){
-		for(j=0;j<source_area_width;j++){
-			temp[i*source_area_width+j] = source[(source_area_top+i)*source_w+source_area_left+j];
-		}
-	}
-	//resample to dest
-	ReSample(temp, source_area_width, source_area_height, dest_w, dest_h, false, false, dest);
-	//free mem
-	free(temp);
-}
 //check in area
 DLL_EXP BOOL ifInArea(int x, int y, aRect area)
 {
@@ -604,9 +634,9 @@ DLL_EXP BOOL copyAndCheckEyeColor(BUF_STRUCT* pBS)
 	BYTE* nose = (BYTE*)malloc(size_nose_w * size_nose_h * 2);
 
 	//copy the area and resample
-	copyTheAreaToTempMem(clr_bmp, w, h, leye_obj->rcObject.left, leye_obj->rcObject.top, leye_obj->rcObject.width, leye_obj->rcObject.height, left_eye_open, size_eye_w, size_eye_h);
-	copyTheAreaToTempMem(clr_bmp, w, h, reye_obj->rcObject.left, reye_obj->rcObject.top, reye_obj->rcObject.width, reye_obj->rcObject.height, right_eye_open, size_eye_w, size_eye_h);
-	copyTheAreaToTempMem(clr_bmp, w, h, nose_obj->rcObject.left, nose_obj->rcObject.top, nose_obj->rcObject.width, nose_obj->rcObject.height, nose, size_nose_w, size_nose_h);
+	copyImgAreaToMem(clr_bmp, w, h, leye_obj->rcObject.left, leye_obj->rcObject.top, leye_obj->rcObject.width, leye_obj->rcObject.height, left_eye_open, size_eye_w, size_eye_h);
+	copyImgAreaToMem(clr_bmp, w, h, reye_obj->rcObject.left, reye_obj->rcObject.top, reye_obj->rcObject.width, reye_obj->rcObject.height, right_eye_open, size_eye_w, size_eye_h);
+	copyImgAreaToMem(clr_bmp, w, h, nose_obj->rcObject.left, nose_obj->rcObject.top, nose_obj->rcObject.width, nose_obj->rcObject.height, nose, size_nose_w, size_nose_h);
 
 	//eye color check
 	int pixels_eye_uv = size_eye_w * size_eye_h/2;
@@ -746,7 +776,23 @@ DLL_EXP void morphological(int w, int h, BUF_STRUCT* pBS, BYTE* tempImg)
 
 DLL_EXP void verifyingEyes(BUF_STRUCT* pBS)
 {
-	copyAndResampleEyeNosePic(pBS);
+	BYTE* _lefteyeOpen = (BYTE*)malloc(32*24*2);
+	BYTE* _righteyeOpen = (BYTE*)malloc(32*24*2);
+	BYTE* _stnose = (BYTE*)malloc(32*48*2);
+
+	copyAndResampleEyeNosePic(pBS, _lefteyeOpen, _righteyeOpen, _stnose);
+
+	//test
+	if(bLastPlugin){
+		CopyToRect(_lefteyeOpen, pBS->displayImage, 32, 24, pBS->W, pBS->H, 0, 0, false);
+		CopyToRect(_righteyeOpen, pBS->displayImage, 32, 24, pBS->W, pBS->H, 0, 24, false);
+		CopyToRect(_stnose, pBS->displayImage, 32, 48, pBS->W, pBS->H, 0, 48, false);
+	}
+
+	//mem free
+	free(_lefteyeOpen);
+	free(_righteyeOpen);
+	free(_stnose);
 	return;
 }
 
@@ -774,13 +820,15 @@ DLL_EXP void ON_PLUGINRUN(int w,int h,BYTE* pYBits,BYTE* pUBits,BYTE* pVBits,BYT
 	//morphological operation
 	BYTE* tempImg = myHeapAlloc(w*h/16);
 	morphological(w/4, h/4, pBS, tempImg);
+	//verifying eyes
+	verifyingEyes(pBS);
 
 	//free mem
 	myHeapFree(tempImg);
 
 	//TEST ONLY
 	if( bLastPlugin ){
-		CopyToRect(tempImg, pYBits, w/4, h/4, w, h, 0, 0, true);
+		// CopyToRect(tempImg, pYBits, w/4, h/4, w, h, 0, 0, true);
 		//pBS->TempImage1d8
 	}
 
