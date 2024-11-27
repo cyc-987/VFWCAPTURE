@@ -792,17 +792,190 @@ DLL_EXP void verifyingEyes(BUF_STRUCT* pBS)
 	return;
 }
 
-DLL_EXP void calcGrayFourCornerCentroid(BYTE* pImg, int imgW, int imgH, aPOINT* Vector)
+DLL_EXP void calcGrayFourCornerCentroid(BYTE* pImg, int imgW, int imgH, 
+										int left, int top, int width, int height,
+										aPOINT* Vector)
 {
+	ShowDebugMessage("calcGrayFourCornerCentroid");
+	//step1
+	int half_width = width/2;
+	int half_height = height/2;
+	int* SumX_0 = (int*)malloc(height * sizeof(int));
+	int* SumX_1 = (int*)malloc(height * sizeof(int));
+	int* SumX_2 = (int*)malloc(height * sizeof(int));
+	int* SumX_3 = (int*)malloc(height * sizeof(int));
+	int* SumI_0 = (int*)malloc(height * sizeof(int));
+	int* SumI_1 = (int*)malloc(height * sizeof(int));
+	int* SumI_2 = (int*)malloc(height * sizeof(int));
+	int* SumI_3 = (int*)malloc(height * sizeof(int));
 
+	//initialize
+	int i;
+	for(i=0;i<height;i++){
+		SumX_0[i] = SumX_1[i] = SumX_2[i] = SumX_3[i] = 0;
+		SumI_0[i] = SumI_1[i] = SumI_2[i] = SumI_3[i] = 0;
+	}
+
+	int j;
+	for(j=top;j<top+height;j++){
+		for(i=left;i<left+width/4;i++){
+			SumX_0[j-top] += i * pImg[j*imgW+i];
+			SumI_0[j-top] += pImg[j*imgW+i];
+			ShowDebugMessage("SumX_0[%d]: %d, SumI_0[%d]: %d", j-top, SumX_0[j-top], j-top, SumI_0[j-top]);
+		}
+		for(i=left+width/4;i<left+width/2;i++){
+			SumX_1[j-top] += i * pImg[j*imgW+i];
+			SumI_1[j-top] += pImg[j*imgW+i];
+		}
+		for(i=left+width/2;i<left+width*3/4;i++){
+			SumX_2[j-top] += i * pImg[j*imgW+i];
+			SumI_2[j-top] += pImg[j*imgW+i];
+		}
+		for(i=left+width*3/4;i<left+width;i++){
+			SumX_3[j-top] += i * pImg[j*imgW+i];
+			SumI_3[j-top] += pImg[j*imgW+i];
+		}
+	}
+	// ShowDebugMessage("step1 done");
+	ShowDebugMessage("SumX_0[0]: %d, SumX_1[0]: %d, SumX_2[0]: %d, SumX_3[0]: %d", SumX_0[0], SumX_1[0], SumX_2[0], SumX_3[0]);
+
+	//step2
+	int X0, X1, X2, X3, Y0, Y1, Y2, Y3;
+	int up_tmp_x, up_tmp_y, down_tmp, y_tmp;
+	up_tmp_x = up_tmp_y = down_tmp = 0;
+	X0 = X1 = X2 = X3 = Y0 = Y1 = Y2 = Y3 = 0;
+	for(j=0;j<half_height;j++){
+		y_tmp = top + j;
+		up_tmp_x += SumX_0[j] + SumX_1[j];
+		up_tmp_y += SumX_0[j]*y_tmp + SumX_1[j]*y_tmp;
+		down_tmp += SumI_0[j] + SumI_1[j];
+	}
+	if(down_tmp != 0){
+		X0 = up_tmp_x / down_tmp;
+		Y0 = up_tmp_y / down_tmp;
+	}
+	up_tmp_x = up_tmp_y = down_tmp = 0;
+	for(j=0;j<half_height;j++){
+		y_tmp = top + j;
+		up_tmp_x += SumX_2[j] + SumX_3[j];
+		up_tmp_y += SumX_2[j]*y_tmp + SumX_3[j]*y_tmp;
+		down_tmp += SumI_2[j] + SumI_3[j];
+	}
+	if(down_tmp != 0){
+		X1 = up_tmp_x / down_tmp;
+		Y1 = up_tmp_y / down_tmp;
+	}
+	up_tmp_x = up_tmp_y = down_tmp = 0;
+	for(j=half_height;j<height;j++){
+		y_tmp = top + j;
+		up_tmp_x += SumX_0[j] + SumX_1[j];
+		up_tmp_y += SumX_0[j]*y_tmp + SumX_1[j]*y_tmp;
+		down_tmp += SumI_0[j] + SumI_1[j];
+	}
+	if(down_tmp != 0){
+		X2 = up_tmp_x / down_tmp;
+		Y2 = up_tmp_y / down_tmp;
+	}
+	up_tmp_x = up_tmp_y = down_tmp = 0;
+	for(j=half_height;j<height;j++){
+		y_tmp = top + j;
+		up_tmp_x += SumX_2[j] + SumX_3[j];
+		up_tmp_y += SumX_2[j]*y_tmp + SumX_3[j]*y_tmp;
+		down_tmp += SumI_2[j] + SumI_3[j];
+	}
+	if(down_tmp != 0){
+		X3 = up_tmp_x / down_tmp;
+		Y3 = up_tmp_y / down_tmp;
+	}
+	// ShowDebugMessage("step2 done");
+	ShowDebugMessage("X0: %d, Y0: %d, X1: %d, Y1: %d, X2: %d, Y2: %d, X3: %d, Y3: %d", X0, Y0, X1, Y1, X2, Y2, X3, Y3);
+
+	//step3
+	X0 = X0 * 1024 / half_width;
+	Y0 = Y0 * 1024 / half_height;
+	X1 = X1 * 1024 / half_width;
+	Y1 = Y1 * 1024 / half_height;
+	X2 = X2 * 1024 / half_width;
+	Y2 = Y2 * 1024 / half_height;
+	X3 = X3 * 1024 / half_width;
+	Y3 = Y3 * 1024 / half_height;
+	ShowDebugMessage("step3 done");
+
+	//save
+	Vector[0].x = X0;
+	Vector[0].y = Y0;
+	Vector[1].x = X1;
+	Vector[1].y = Y1;
+	Vector[2].x = X2;
+	Vector[2].y = Y2;
+	Vector[3].x = X3;
+	Vector[3].y = Y3;
+	ShowDebugMessage("save done");
+
+	//free mem
+	free(SumX_0);
+	free(SumX_1);
+	free(SumX_2);
+	free(SumX_3);
+	free(SumI_0);
+	free(SumI_1);
+	free(SumI_2);
+	free(SumI_3);
+}
+
+DLL_EXP void calcTwoLevelCentroid(BUF_STRUCT* pBS, TRACE_OBJECT* obj)
+{
+	BYTE* grayBmp = pBS->grayBmp;
+	FeatureVector4P* fv = (FeatureVector4P*)(obj->fvObject.Vector);
+	FeatureVector4P* fvLT = fv + 1;
+	FeatureVector4P* fvRT = fv + 2;
+	FeatureVector4P* fvLB = fv + 3;
+	FeatureVector4P* fvRB = fv + 4;
+	calcGrayFourCornerCentroid(grayBmp, pBS->W, pBS->H,
+								obj->rcObject.left, obj->rcObject.top,
+								obj->rcObject.width, obj->rcObject.height,
+								fv->Vector);
+	calcGrayFourCornerCentroid(grayBmp, pBS->W, pBS->H,
+								obj->rcObject.left, obj->rcObject.top,
+								obj->rcObject.width/2, obj->rcObject.height/2,
+								fvLT->Vector);
+	calcGrayFourCornerCentroid(grayBmp, pBS->W, pBS->H,
+								obj->rcObject.left+obj->rcObject.width/2, obj->rcObject.top,
+								obj->rcObject.width/2, obj->rcObject.height/2,
+								fvRT->Vector);
+	calcGrayFourCornerCentroid(grayBmp, pBS->W, pBS->H,
+								obj->rcObject.left, obj->rcObject.top+obj->rcObject.height/2,
+								obj->rcObject.width/2, obj->rcObject.height/2,
+								fvLB->Vector);
+	calcGrayFourCornerCentroid(grayBmp, pBS->W, pBS->H,
+								obj->rcObject.left+obj->rcObject.width/2, obj->rcObject.top+obj->rcObject.height/2,
+								obj->rcObject.width/2, obj->rcObject.height/2,
+								fvRB->Vector);
+
+	fv->nLevels = 2;
+	fvLT->nLevels = fvRT->nLevels = fvLB->nLevels = fvRB->nLevels = 1;
+	fv->pNL_LeftTop = fvLT;
+	fv->pNL_RightTop = fvRT;
+	fv->pNL_LeftBottom = fvLB;
+	fv->pNL_RightBottom = fvRB;
 }
 
 DLL_EXP void pickObjFeature(BUF_STRUCT* pBS)
 {
-	//check
+	// check
 	if(!checkCalcStatus(pBS)){
 		return;
 	}
+	ShowDebugMessage("pickObjFeature");
+
+	TRACE_OBJECT *nose_obj, *leye_obj, *reye_obj;
+	nose_obj = &(pBS->pOtherVars->objNose);
+	leye_obj = &(pBS->pOtherVars->objLefteye);
+	reye_obj = &(pBS->pOtherVars->objRighteye);
+
+	calcTwoLevelCentroid(pBS, leye_obj);
+	calcTwoLevelCentroid(pBS, reye_obj);
+	calcTwoLevelCentroid(pBS, nose_obj);
 
 	return;
 }
